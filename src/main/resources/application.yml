@@ -1,0 +1,60 @@
+spring:
+  application:
+    name: simple-stock-service
+
+  # --- CONFIGURAÇÕES DO MYSQL ---
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # Conexão com o contêiner Docker na porta 3306 e banco 'stock_db'
+    url: jdbc:mysql://localhost:3306/stock_db
+    username: root
+    password: 1q2w
+
+  jpa:
+    show-sql: true
+    hibernate:
+      # Cria ou atualiza as tabelas automaticamente
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+
+  # --- CONFIGURAÇÕES DO KAFKA ---
+  kafka:
+    # Configuração do Produtor (Usada no StockService para enviar eventos)
+    producer:
+      bootstrap-servers: localhost:9092
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # Serializa o objeto Java (StockEvent) para JSON
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring:
+          json:
+            add:
+              type:
+                headers: true # Adiciona cabeçalhos de tipo para o Consumidor saber qual classe usar
+
+    # Configuração do Consumidor (Usada no StockAuditListener para receber eventos)
+    consumer:
+      bootstrap-servers: localhost:9092
+      group-id: audit-event-group # Garante que as mensagens sejam lidas uma vez por grupo
+      auto-offset-reset: latest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # Usamos ErrorHandlingDeserializer para melhor resiliência
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring:
+          json:
+            trusted:
+              # Pacote base onde Spring deve procurar classes. CORRIGIDO.
+              packages: "org.com.simplestockservice.*"
+            type:
+              mapping:
+                # Mapeamento do nome do evento para a classe Java completa (FQCN). CORRIGIDO.
+                stockevent: org.com.simplestockservice.dto.StockEvent
+          deserializer:
+            value:
+              delegate:
+                class: org.springframework.kafka.support.serializer.JsonDeserializer
+
+server.port: 8080
