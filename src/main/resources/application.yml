@@ -58,3 +58,15 @@ spring:
                 class: org.springframework.kafka.support.serializer.JsonDeserializer
 
 server.port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
