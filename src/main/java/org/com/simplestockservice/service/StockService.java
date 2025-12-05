@@ -1,6 +1,7 @@
 package org.com.simplestockservice.service;
 
 import org.com.simplestockservice.dto.StockEvent;
+import org.com.simplestockservice.dto.StockErrorEvent;
 import org.com.simplestockservice.model.Product;
 import org.com.simplestockservice.repository.ProductRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -8,6 +9,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Service
@@ -18,7 +20,8 @@ public class StockService {
     @Autowired
     private KafkaTemplate<String, Object> kafkaTemplate;
 
-    private static final String TOPIC = "stock-audit-topic";
+    private static final String AUDIT_TOPIC = "stock-audit-topic";
+    private static final String ERROR_TOPIC = "stock-error-topic";
 
     @Transactional
     public Product updateStockQuantity(Long productId, int changeAmount) {
@@ -29,13 +32,23 @@ public class StockService {
         int newQuantity = oldQuantity + changeAmount;
 
         if (newQuantity < 0) {
+            StockErrorEvent errorEvent = new StockErrorEvent(
+                    "INSUFFICIENT_STOCK",
+                    "Estoque insuficiente para a operação. Qtd. atual: " + oldQuantity,
+                    productId,
+                    changeAmount,
+                    oldQuantity,
+                    product.getProductCode(),
+                    LocalDateTime.now().toString()
+            );
+            kafkaTemplate.send(ERROR_TOPIC, product.getProductCode(), errorEvent);
+
             throw new RuntimeException("Estoque insuficiente para a operação.");
         }
 
         product.setQuantity(newQuantity);
-        Product updatedProduct = repository.save(product); // 1. Persiste no MySQL
+        Product updatedProduct = repository.save(product);
 
-        // 2. Publica o Evento no Kafka para auditoria/notificação
         StockEvent event = new StockEvent(
                 changeAmount > 0 ? "StockIncreased" : "StockDecreased",
                 updatedProduct.getId(),
@@ -44,13 +57,11 @@ public class StockService {
                 updatedProduct.getProductCode()
         );
 
-        // A chave (key) garante que todos os eventos do mesmo produto vão para a mesma partição, se houver
-        kafkaTemplate.send(TOPIC, updatedProduct.getProductCode(), event);
+        kafkaTemplate.send(AUDIT_TOPIC, updatedProduct.getProductCode(), event);
 
         return updatedProduct;
     }
 
-    // Métodos auxiliares
     public Product createProduct(Product product) {
         return repository.save(product);
     }
